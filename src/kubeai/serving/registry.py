@@ -170,8 +170,10 @@ class ModelRegistry:
                 cpu_millicores=1000,
                 host_memory_mib=2048,
             ),
+            # Serving outranks batch work; `owner` is what marks the workload class
+            # (TaskRequest has no free-form labels — its selectors are node_selector
+            # and affinity, which match against *node* labels).
             priority=100,
-            labels={"workload": "serving"},
             preemptible=True,
             owner="serving",
         )

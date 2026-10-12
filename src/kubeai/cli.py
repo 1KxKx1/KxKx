@@ -32,6 +32,11 @@ def _print_table(headers: list[str], rows: list[list[Any]]) -> None:
 
 
 def _emit(payload: Any, as_json: bool) -> None:
+    """Print the machine-readable result.
+
+    Commands return as soon as this is called when ``--json`` is set, so piping
+    into a file always yields valid JSON with no tables interleaved.
+    """
     if as_json:
         print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
@@ -45,6 +50,10 @@ def cmd_gpus(args: argparse.Namespace) -> int:
     devices, source = discover(
         allow_simulation=not args.no_simulation, simulated_spec=args.simulate
     )
+    if args.json:
+        _emit({"source": source, "devices": [d.to_dict() for d in devices]}, True)
+        return EXIT_OK
+
     print(f"accelerator source: {source}")
     if not devices:
         print("no accelerators found (and simulation disabled)")
@@ -66,8 +75,6 @@ def cmd_gpus(args: argparse.Namespace) -> int:
             for d in devices
         ],
     )
-    if args.json:
-        _emit([d.to_dict() for d in devices], True)
     return EXIT_OK
 
 
@@ -101,6 +108,10 @@ def cmd_schedule(args: argparse.Namespace) -> int:
             run_simulation(tasks, nodes, policy=args.policy, preemption=not args.no_preemption)
         ]
 
+    if args.json:
+        _emit([r.to_dict() for r in reports], True)
+        return EXIT_OK
+
     _print_table(
         ["policy", "submitted", "completed", "preempted", "avg util", "peak util",
          "makespan s", "stranded MiB", "pending"],
@@ -119,8 +130,6 @@ def cmd_schedule(args: argparse.Namespace) -> int:
             for r in reports
         ],
     )
-    if args.json:
-        _emit([r.to_dict() for r in reports], True)
     return EXIT_OK
 
 
@@ -140,6 +149,10 @@ def cmd_workflow_run(args: argparse.Namespace) -> int:
     )
     run = asyncio.run(engine.run())
 
+    if args.json:
+        _emit(run.to_dict(), True)
+        return EXIT_OK if run.status.value == "Succeeded" else EXIT_FAILURE
+
     _print_table(
         ["task", "status", "exit", "seconds", "attempts"],
         [
@@ -150,8 +163,6 @@ def cmd_workflow_run(args: argparse.Namespace) -> int:
     )
     print(f"\nworkflow {run.name!r} {run.status.value} in {run.duration:.2f}s "
           f"({run.counts()})")
-    if args.json:
-        _emit(run.to_dict(), True)
     if args.show_output:
         for name in run.order:
             result = run.steps[name]
@@ -237,6 +248,10 @@ def cmd_bench_serving(args: argparse.Namespace) -> int:
             model_kwargs=model_kwargs,
         )
     )
+    if args.json:
+        _emit(report, True)
+        return EXIT_OK
+
     rows = []
     for scenario in report["scenarios"]:
         rows.append(
@@ -268,8 +283,6 @@ def cmd_bench_serving(args: argparse.Namespace) -> int:
             for row in report.get("decode_scaling", [])
         ],
     )
-    if args.json:
-        _emit(report, True)
     return EXIT_OK
 
 
@@ -281,6 +294,10 @@ def cmd_bench_workflow(args: argparse.Namespace) -> int:
             requests=args.requests, seconds_per_step=args.seconds_per_step, out=args.out
         )
     )
+    if args.json:
+        _emit(report, True)
+        return EXIT_OK
+
     _print_table(
         ["scenario", "total s", "sum step s", "speedup"],
         [
@@ -293,8 +310,6 @@ def cmd_bench_workflow(args: argparse.Namespace) -> int:
             for s in report["scenarios"]
         ],
     )
-    if args.json:
-        _emit(report, True)
     return EXIT_OK
 
 

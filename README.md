@@ -77,6 +77,15 @@ Two things are worth pointing at:
 actually returned to a user. Each request needs `len(output) − 1` decode steps, because its first
 token comes out of prefill; 1.000 means nothing was spent on work that had already finished.
 
+**When batching pays, and when it does not.** The gap over *serial* depends on how much work each
+step contains. With this 28.7 M-parameter model at mean 26.5 output tokens it is 1.24×; rerun the
+same benchmark with a smaller model (`--model-dim 256 --model-layers 4`) and continuous batching
+lands slightly *below* serial (0.96×), because the fixed per-step cost — sampling, metrics, and the
+KV-cache gather/scatter described below — is no longer amortised over enough arithmetic. The
+advantage over **static** batching, by contrast, held in every run I made (1.40× in that same
+smaller-model run), because it comes from not wasting slots rather than from per-step efficiency.
+That is why CI asserts the structural claims and only *reports* the serial ratio.
+
 ### 2. The batching effect in isolation (backend only)
 
 The same model, decoded directly — no batcher, no queue, no metrics:
@@ -385,8 +394,11 @@ OpenAI-compatible HTTP surface; they skip automatically when the optional `[web]
 because the scheduler, workflow engine and batcher are all usable without FastAPI.
 
 CI additionally runs the self-test DAG end to end, compiles both example pipelines, boots the
-container and calls `/v1/chat/completions`, renders the Helm chart, and asserts that continuous
-batching still beats serial by a margin — so a change that quietly breaks batching fails the build.
+container and calls `/v1/chat/completions`, renders the Helm chart, checks that every `--json`
+command emits parseable JSON, and asserts the two structural batching claims — continuous beats
+static at the same batch size, and static slot efficiency stays below 0.95. That last assertion is
+the one that matters: it is what fails if the static baseline ever starts admitting work mid-group
+again, which is precisely the bug it was written for.
 
 ---
 

@@ -8,6 +8,7 @@ import time
 import numpy as np
 import pytest
 
+from kubeai.scheduler.simulate import build_fleet
 from kubeai.serving.backends import (
     BOS,
     UNK,
@@ -397,6 +398,43 @@ async def test_registry_does_not_evict_pinned_models(backend):
     with pytest.raises(InsufficientMemory):
         await registry.load("other")
     assert "pinned" in registry.loaded
+    await registry.shutdown()
+
+
+async def test_registry_places_a_model_through_the_scheduler():
+    """Loading a model must actually consume accelerator memory on a node.
+
+    This is the path the gateway takes during startup, so a mistake here takes the
+    whole service down at boot — which is exactly what a wrong field name did. It
+    needs no HTTP layer, so it is tested locally too.
+    """
+    from kubeai.scheduler.scheduler import Scheduler
+
+    nodes = build_fleet(nodes=1, gpus_per_node=2, memory_mib=4096)
+    scheduler = Scheduler(nodes, policy="binpack")
+    registry = ModelRegistry(memory_budget_mib=1024, scheduler=scheduler)
+    registry.register(
+        ModelSpec(id="placed", backend="numpy", footprint_mib=64, pinned=True,
+                  backend_options={"config": TINY})
+    )
+
+    model = await registry.load("placed")
+    assert model.node == "node-00"
+    assert len(model.devices) == 1
+    assert nodes[0].allocated_mib == 64
+
+    await registry.shutdown()
+    assert nodes[0].allocated_mib == 0, "unloading must release the placement"
+
+
+async def test_registry_without_a_scheduler_still_loads():
+    registry = ModelRegistry(memory_budget_mib=512)
+    registry.register(
+        ModelSpec(id="local", backend="numpy", footprint_mib=64,
+                  backend_options={"config": TINY})
+    )
+    model = await registry.load("local")
+    assert model.node is None and model.devices == []
     await registry.shutdown()
 
 

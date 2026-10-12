@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -82,19 +82,59 @@ jobs:
       - name: Compile the training pipeline to a cluster bundle
         run: kubeai workflow compile examples/training-pipeline.yaml --format k8s --out cluster.yaml
 
-      - name: Short benchmark (guards against performance regressions that break batching)
+      - name: Verify --json emits valid JSON with no tables mixed in
         run: |
-          kubeai bench serving --requests 16 --max-tokens 8 --batch-sizes 1,8 --json > bench.json
+          kubeai gpus --json | python -c "import json,sys; d=json.load(sys.stdin); print('gpus json ok:', d['source'])"
+          kubeai bench workflow --requests 6 --seconds-per-step 0.01 --json \
+            | python -c "import json,sys; d=json.load(sys.stdin); print('bench json ok:', len(d['scenarios']), 'scenarios')"
+          kubeai schedule --requests 12 --json \
+            | python -c "import json,sys; d=json.load(sys.stdin); print('schedule json ok:', len(d), 'policies')"
+
+      - name: Short benchmark (guards against a regression that breaks batching)
+        run: |
+          kubeai bench serving --requests 48 --max-tokens 48 --batch-sizes 1,32 \
+            --model-dim 256 --model-layers 4 --json > bench.json
           python - <<'PY'
           import json, sys
+
           report = json.load(open("bench.json"))
-          by_batch = {s["batch_size"]: s for s in report["scenarios"] if "continuous" in s["label"]}
-          serial = next(s for s in report["scenarios"] if s["batch_size"] == 1)
-          best = max(by_batch.values(), key=lambda s: s["throughput_tokens_per_second"])
-          speedup = best["throughput_tokens_per_second"] / serial["throughput_tokens_per_second"]
-          print(f"continuous batch={best['batch_size']} speedup {speedup:.2f}x")
-          if speedup < 1.2:
-              sys.exit(f"batching gave no meaningful speedup ({speedup:.2f}x)")
+          scenarios = report["scenarios"]
+          serial = next(s for s in scenarios if s["batch_size"] == 1 and "serial" in s["label"])
+          continuous = {s["batch_size"]: s for s in scenarios if "continuous" in s["label"]}
+          static = {s["batch_size"]: s for s in scenarios if "static" in s["label"]}
+
+          big = max(continuous)
+          cont, stat = continuous[big], static[big]
+          print(f"serial                  {serial['throughput_tokens_per_second']:8.1f} tok/s")
+          print(f"static     batch={big:<3}   {stat['throughput_tokens_per_second']:8.1f} tok/s "
+                f"(slot eff {stat['slot_efficiency']:.3f})")
+          print(f"continuous batch={big:<3}   {cont['throughput_tokens_per_second']:8.1f} tok/s "
+                f"(slot eff {cont['slot_efficiency']:.3f})")
+          print(f"continuous vs serial    {cont['speedup_vs_serial']:8.2f}x  (reported, not asserted)")
+          print(f"continuous vs static    "
+                f"{cont['throughput_tokens_per_second'] / stat['throughput_tokens_per_second']:8.2f}x")
+
+          # These are *structural* claims, true on any machine: rebuilding the batch
+          # every step (a) is faster than decode-until-all-finish at the same batch
+          # size, and (b) never spends a slot on a sequence that already finished.
+          # The throughput ratio against serial is deliberately only reported —
+          # it depends on how long the generations are, so asserting it here would
+          # make the build flaky rather than meaningful.
+          failures = []
+          if cont["throughput_tokens_per_second"] <= stat["throughput_tokens_per_second"]:
+              failures.append("continuous batching did not beat static batching")
+          if cont["slot_efficiency"] < 0.95:
+              failures.append(
+                  f"continuous slot efficiency collapsed to {cont['slot_efficiency']:.3f}"
+              )
+          if stat["slot_efficiency"] > 0.95:
+              failures.append(
+                  "static batching looks as efficient as continuous — the static "
+                  "baseline is probably admitting work mid-group again"
+              )
+          if failures:
+              sys.exit("; ".join(failures))
+          print("batching behaviour intact")
           PY
 
       - name: Upload artefacts
