@@ -201,9 +201,37 @@ def test_load_and_unload_a_model_at_runtime(client):
     assert client.delete("/v1/models/second").status_code == 404
 
 
-def test_loading_an_unregistered_model_is_a_404(client):
-    response = client.post("/v1/models/load", json={"id": "ghost"})
-    assert response.status_code == 404
+def test_loading_a_model_that_cannot_fit_returns_507(client):
+    """The endpoint registers what it is asked for, so the failure mode is memory."""
+    response = client.post(
+        "/v1/models/load",
+        json={"id": "too-big", "backend": "numpy", "footprint_mib": 100_000},
+    )
+    assert response.status_code == 507
+    assert "too-big" in response.json()["detail"]
+
+
+def test_loading_with_an_unknown_backend_returns_400(client):
+    response = client.post(
+        "/v1/models/load",
+        json={"id": "bad-backend", "backend": "not-a-backend", "footprint_mib": 1},
+    )
+    assert response.status_code == 400
+    assert "unknown backend" in response.json()["detail"]
+
+
+def test_loading_with_an_invalid_backend_option_returns_400(client):
+    response = client.post(
+        "/v1/models/load",
+        json={
+            "id": "bad-option",
+            "backend": "numpy",
+            "footprint_mib": 1,
+            "backend_options": {"notAnOption": 1},
+        },
+    )
+    assert response.status_code == 400
+    assert "invalid options" in response.json()["detail"]
 
 
 # --------------------------------------------------------------------------- #

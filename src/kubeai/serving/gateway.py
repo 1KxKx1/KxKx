@@ -29,7 +29,7 @@ from ..scheduler.model import Node
 from ..scheduler.scheduler import Scheduler
 from .batcher import GenerationRequest, QueueFull
 from .metrics import ServingMetrics
-from .registry import ModelNotFound, ModelRegistry, ModelSpec
+from .registry import InsufficientMemory, ModelNotFound, ModelRegistry, ModelSpec
 
 log = logging.getLogger(__name__)
 
@@ -273,6 +273,12 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
     @app.post("/v1/models/load")
     async def load_model(payload: LoadModelRequest) -> dict:
+        """Register the model if needed, then load it.
+
+        The contract is "ensure this model is loaded", so an unknown id is not a
+        404 — creating it is what this endpoint is *for*. What can fail is running
+        out of memory (507) or naming a backend/option that does not exist (400).
+        """
         spec = ModelSpec(
             id=payload.id,
             backend=payload.backend,
@@ -285,10 +291,11 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         app.state.registry.register(spec)
         try:
             model = await app.state.registry.load(payload.id)
-        except ModelNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except RuntimeError as exc:
+        except InsufficientMemory as exc:
             raise HTTPException(status_code=507, detail=str(exc)) from exc
+        except ValueError as exc:
+            # An unknown backend, or an option that backend does not accept.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return model.to_dict()
 
     @app.delete("/v1/models/{model_id}")
