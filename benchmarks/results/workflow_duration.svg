@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" font-family="system-ui, sans-serif">
+<rect width="720" height="400" fill="white"/>
+<text x="360.0" y="28" text-anchor="middle" font-size="16" font-weight="600">Workflow wall-clock time</text>
+<line x1="70" y1="310" x2="690" y2="310" stroke="#333" stroke-width="1"/>
+<text x="14" y="180.0" font-size="12" fill="#555" transform="rotate(-90 14 180.0)" text-anchor="middle">seconds</text>
+<rect x="101.0" y="50.0" width="93.0" height="260.0" fill="#2563eb" rx="3"/>
+<text x="147.5" y="44.0" text-anchor="middle" font-size="12" fill="#111">6</text>
+<text x="147.5" y="328" text-anchor="middle" font-size="11" fill="#444">max_parallel=1</text>
+<rect x="256.0" y="236.2" width="93.0" height="73.8" fill="#2563eb" rx="3"/>
+<text x="302.5" y="230.2" text-anchor="middle" font-size="12" fill="#111">2</text>
+<text x="302.5" y="328" text-anchor="middle" font-size="11" fill="#444">max_parallel=4</text>
+<rect x="411.0" y="268.2" width="93.0" height="41.8" fill="#2563eb" rx="3"/>
+<text x="457.5" y="262.2" text-anchor="middle" font-size="12" fill="#111">1</text>
+<text x="457.5" y="328" text-anchor="middle" font-size="11" fill="#444">max_parallel=8</text>
+<rect x="566.0" y="279.1" width="93.0" height="30.9" fill="#2563eb" rx="3"/>
+<text x="612.5" y="273.1" text-anchor="middle" font-size="12" fill="#111">1</text>
+<text x="612.5" y="328" text-anchor="middle" font-size="11" fill="#444">max_parallel=16</text>
+</svg>

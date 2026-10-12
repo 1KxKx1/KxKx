@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" font-family="system-ui, sans-serif">
+<rect width="720" height="400" fill="white"/>
+<text x="360.0" y="28" text-anchor="middle" font-size="16" font-weight="600">Time to first token</text>
+<line x1="70" y1="310" x2="690" y2="310" stroke="#333" stroke-width="1"/>
+<text x="14" y="180.0" font-size="12" fill="#555" transform="rotate(-90 14 180.0)" text-anchor="middle">milliseconds</text>
+<rect x="90.7" y="98.1" width="62.0" height="211.9" fill="#2563eb" rx="3"/>
+<text x="121.7" y="92.1" text-anchor="middle" font-size="12" fill="#111">2,685</text>
+<text x="121.7" y="328" text-anchor="middle" font-size="11" fill="#444">serial
+(no
+batching)</text>
+<rect x="194.0" y="93.0" width="62.0" height="217.0" fill="#2563eb" rx="3"/>
+<text x="225.0" y="87.0" text-anchor="middle" font-size="12" fill="#111">2,749</text>
+<text x="225.0" y="328" text-anchor="middle" font-size="11" fill="#444">static
+batching
+(batch=8)</text>
+<rect x="297.3" y="282.7" width="62.0" height="27.3" fill="#2563eb" rx="3"/>
+<text x="328.3" y="276.7" text-anchor="middle" font-size="12" fill="#111">346</text>
+<text x="328.3" y="328" text-anchor="middle" font-size="11" fill="#444">static
+batching
+(batch=32)</text>
+<rect x="400.7" y="50.0" width="62.0" height="260.0" fill="#2563eb" rx="3"/>
+<text x="431.7" y="44.0" text-anchor="middle" font-size="12" fill="#111">3,294</text>
+<text x="431.7" y="328" text-anchor="middle" font-size="11" fill="#444">continuous
+batching
+(batch=1)</text>
+<rect x="504.0" y="159.8" width="62.0" height="150.2" fill="#2563eb" rx="3"/>
+<text x="535.0" y="153.8" text-anchor="middle" font-size="12" fill="#111">1,903</text>
+<text x="535.0" y="328" text-anchor="middle" font-size="11" fill="#444">continuous
+batching
+(batch=8)</text>
+<rect x="607.3" y="265.9" width="62.0" height="44.1" fill="#2563eb" rx="3"/>
+<text x="638.3" y="259.9" text-anchor="middle" font-size="12" fill="#111">559</text>
+<text x="638.3" y="328" text-anchor="middle" font-size="11" fill="#444">continuous
+batching
+(batch=32)</text>
+</svg>

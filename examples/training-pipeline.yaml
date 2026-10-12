@@ -1,0 +1,182 @@
+# Production-shaped LLM fine-tuning pipeline.
+#
+#   kubeai workflow validate examples/training-pipeline.yaml
+#   kubeai workflow compile  examples/training-pipeline.yaml --format argo --out out/argo.yaml
+#   kubeai workflow compile  examples/training-pipeline.yaml --format k8s  --out out/cluster.yaml
+#
+# What it demonstrates:
+#   * a fan-out / fan-in DAG (per-dataset preparation -> distributed training ->
+#     evaluation -> export) expressed once and compiled to real cluster resources;
+#   * GPU requests that become nvidia.com/gpu limits plus the kubeai.io/gpu-memory-mib
+#     annotation the scheduler reads back;
+#   * retries with exponential backoff on the expensive step only;
+#   * nodeSelector pinning so a 2x A100 job is not scheduled onto a 1x consumer card;
+#   * the training template also compiles into a Kubeflow PyTorchJob.
+apiVersion: kubeai.io/v1alpha1
+kind: Workflow
+metadata:
+  name: llm-finetune
+  namespace: ai-platform
+  labels:
+    kubeai.io/team: ai-platform
+    kubeai.io/cost-center: research
+spec:
+  entrypoint: finetune-pipeline
+  ttlSecondsAfterFinished: 86400
+  arguments:
+    parameters:
+      - name: baseModel
+        value: Qwen/Qwen2.5-7B-Instruct
+      - name: datasetRevision
+        value: "2026-05"
+      - name: gpuMemoryMiB
+        value: "40960"
+
+  templates:
+    # ---------------------------------------------------------------- #
+    - name: finetune-pipeline
+      dag:
+        tasks:
+          - name: validate-inputs
+            template: validate
+
+          # Three shards prepared in parallel.
+          - name: prepare-shard-0
+            template: data-prep
+            depends: [validate-inputs]
+            arguments:
+              parameters: [{ name: shard, value: "0" }]
+          - name: prepare-shard-1
+            template: data-prep
+            depends: [validate-inputs]
+            arguments:
+              parameters: [{ name: shard, value: "1" }]
+          - name: prepare-shard-2
+            template: data-prep
+            depends: [validate-inputs]
+            arguments:
+              parameters: [{ name: shard, value: "2" }]
+
+          # Distributed training starts only once every shard is ready.
+          - name: train
+            template: train-job
+            depends: [prepare-shard-0, prepare-shard-1, prepare-shard-2]
+
+          - name: evaluate
+            template: evaluate
+            depends: [train]
+            arguments:
+              parameters:
+                - name: modelPath
+                  value: "{{tasks.train.outputs.modelPath}}"
+
+          # Only run the export/registration step when evaluation passed.
+          - name: export
+            template: export-model
+            depends: [evaluate]
+            when: "{{tasks.evaluate.status}} == Succeeded"
+
+    # ---------------------------------------------------------------- #
+    - name: validate
+      container:
+        image: python:3.12-slim
+        command: [python, -m, kubeai.workflow.validate_inputs]
+        env:
+          BASE_MODEL: "{{workflow.parameters.baseModel}}"
+          DATASET_REVISION: "{{workflow.parameters.datasetRevision}}"
+      resources: { cpu: "1", memory: 1Gi }
+      timeout: 120s
+
+    - name: data-prep
+      inputs:
+        parameters: [shard]
+      container:
+        image: python:3.12-slim
+        command: [python, -m, kubeai.pipelines.prepare]
+        args: ["--shard", "{{inputs.parameters.shard}}", "--revision", "{{workflow.parameters.datasetRevision}}"]
+      resources: { cpu: "4", memory: 8Gi }
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnFailure
+        backoffSeconds: 5
+        backoffFactor: 2
+        maxBackoffSeconds: 60
+      timeout: 1800s
+
+    # ---------------------------------------------------------------- #
+    - name: train-job
+      container:
+        image: pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+        command:
+          - torchrun
+          - --nproc_per_node=2
+          - --nnodes=1
+          - --master_port=29500
+          - -m
+          - kubeai.pipelines.train
+        args:
+          - "--base-model"
+          - "{{workflow.parameters.baseModel}}"
+          - "--output-dir"
+          - /work/model
+        env:
+          NCCL_DEBUG: WARN
+          NCCL_IB_DISABLE: "1"
+          HF_HOME: /work/hf-cache
+          TOKENIZERS_PARALLELISM: "false"
+      # 2 x 40GiB: enough headroom for 7B weights + AdamW states + activations.
+      resources:
+        cpu: "16"
+        memory: 128Gi
+        gpu: 2
+        gpuMemoryMiB: 40960
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+      retryStrategy:
+        limit: 3
+        retryPolicy: OnFailure
+        backoffSeconds: 30
+        backoffFactor: 2
+        maxBackoffSeconds: 600
+      timeout: 43200s
+      outputs:
+        modelPath: "{{file:/work/model}}"
+
+    # ---------------------------------------------------------------- #
+    - name: evaluate
+      inputs:
+        parameters: [modelPath]
+      container:
+        image: pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+        command: [python, -m, kubeai.pipelines.evaluate]
+        args: ["--model", "{{inputs.parameters.modelPath}}", "--split", heldout]
+      resources:
+        cpu: "8"
+        memory: 64Gi
+        gpu: 1
+        gpuMemoryMiB: 40960
+      timeout: 3600s
+      outputs:
+        metrics: "{{file:/work/metrics.json}}"
+
+    - name: export-model
+      script:
+        image: python:3.12-slim
+        command: [python]
+        source: |
+          import json, pathlib, time
+          card = {
+              "model": "{{workflow.parameters.baseModel}}",
+              "dataset_revision": "{{workflow.parameters.datasetRevision}}",
+              "workflow": "{{workflow.name}}",
+              "run_id": "{{workflow.uid}}",
+              "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "serving": {"backend": "vllm", "max_batch_size": 32},
+          }
+          out = pathlib.Path("/work/model-card.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(card, indent=2))
+          print(json.dumps(card))
+      timeout: 300s
+      outputs:
+        card: "{{file:/work/model-card.json}}"

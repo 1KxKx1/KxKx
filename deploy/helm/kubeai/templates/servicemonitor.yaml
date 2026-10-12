@@ -1,0 +1,53 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kubeai.fullname" . }}
+  labels:
+    {{- include "kubeai.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kubeai.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
+{{- if .Values.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kubeai.fullname" . }}
+  labels:
+    {{- include "kubeai.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: kubeai.serving
+      rules:
+        # Queue growth is the leading indicator of an undersized deployment.
+        - alert: KubeaiQueueBacklog
+          expr: kubeai_queue_depth > 32
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Inference queue is backing up ({{ "{{" }} $value {{ "}}" }} pending requests)"
+            description: "Raise replicaCount or maxBatchSize; check /admin/autoscaling-hint."
+        # A rising TTFT with a flat queue means the batch is too large to be useful.
+        - alert: KubeaiTimeToFirstTokenHigh
+          expr: histogram_quantile(0.95, rate(kubeai_time_to_first_token_seconds_bucket[5m])) > 2
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "p95 time-to-first-token above 2s"
+        - alert: KubeaiRequestsFailing
+          expr: rate(kubeai_requests_total{status="failed"}[5m]) > 0.05
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "More than 5% of inference requests are failing"
+{{- end }}

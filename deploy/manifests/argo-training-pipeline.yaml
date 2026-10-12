@@ -1,0 +1,213 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: llm-finetune
+  namespace: ai-platform
+  labels:
+    app.kubernetes.io/name: kubeai
+    app.kubernetes.io/managed-by: kubeai-platform
+    kubeai.io/workflow: llm-finetune
+    kubeai.io/team: ai-platform
+    kubeai.io/cost-center: research
+spec:
+  entrypoint: finetune-pipeline
+  templates:
+  - name: finetune-pipeline
+    dag:
+      tasks:
+      - name: validate-inputs
+        template: validate
+      - name: prepare-shard-0
+        template: data-prep
+        depends: validate-inputs
+        arguments:
+          parameters:
+          - name: shard
+            value: '0'
+      - name: prepare-shard-1
+        template: data-prep
+        depends: validate-inputs
+        arguments:
+          parameters:
+          - name: shard
+            value: '1'
+      - name: prepare-shard-2
+        template: data-prep
+        depends: validate-inputs
+        arguments:
+          parameters:
+          - name: shard
+            value: '2'
+      - name: train
+        template: train-job
+        depends: prepare-shard-0 && prepare-shard-1 && prepare-shard-2
+      - name: evaluate
+        template: evaluate
+        depends: train
+        arguments:
+          parameters:
+          - name: modelPath
+            value: '{{tasks.train.outputs.modelPath}}'
+      - name: export
+        template: export-model
+        depends: evaluate
+        when: '{{tasks.evaluate.status}} == Succeeded'
+  - name: validate
+    container:
+      image: python:3.12-slim
+      command:
+      - python
+      - -m
+      - kubeai.workflow.validate_inputs
+      env:
+      - name: BASE_MODEL
+        value: '{{workflow.parameters.baseModel}}'
+      - name: DATASET_REVISION
+        value: '{{workflow.parameters.datasetRevision}}'
+      resources:
+        requests:
+          cpu: '1'
+          memory: 1Gi
+        limits:
+          cpu: '1'
+          memory: 1Gi
+    activeDeadlineSeconds: 120
+  - name: data-prep
+    container:
+      image: python:3.12-slim
+      command:
+      - python
+      - -m
+      - kubeai.pipelines.prepare
+      args:
+      - --shard
+      - '{{inputs.parameters.shard}}'
+      - --revision
+      - '{{workflow.parameters.datasetRevision}}'
+      resources:
+        requests:
+          cpu: '4'
+          memory: 8Gi
+        limits:
+          cpu: '4'
+          memory: 8Gi
+    retryStrategy:
+      limit: 2
+      retryPolicy: OnFailure
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 60s
+    activeDeadlineSeconds: 1800
+    inputs:
+      parameters:
+      - name: shard
+  - name: train-job
+    container:
+      image: pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+      command:
+      - torchrun
+      - --nproc_per_node=2
+      - --nnodes=1
+      - --master_port=29500
+      - -m
+      - kubeai.pipelines.train
+      args:
+      - --base-model
+      - '{{workflow.parameters.baseModel}}'
+      - --output-dir
+      - /work/model
+      env:
+      - name: NCCL_DEBUG
+        value: WARN
+      - name: NCCL_IB_DISABLE
+        value: '1'
+      - name: HF_HOME
+        value: /work/hf-cache
+      - name: TOKENIZERS_PARALLELISM
+        value: 'false'
+      resources:
+        requests:
+          cpu: '16'
+          memory: 128Gi
+          nvidia.com/gpu: 2
+        limits:
+          cpu: '16'
+          memory: 128Gi
+          nvidia.com/gpu: 2
+          kubeai.io/gpu-memory-mib: '40960'
+    retryStrategy:
+      limit: 3
+      retryPolicy: OnFailure
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 600s
+    activeDeadlineSeconds: 43200
+    nodeSelector:
+      nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+    outputs:
+      parameters:
+      - name: modelPath
+        valueFrom:
+          path: /work/model
+  - name: evaluate
+    container:
+      image: pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+      command:
+      - python
+      - -m
+      - kubeai.pipelines.evaluate
+      args:
+      - --model
+      - '{{inputs.parameters.modelPath}}'
+      - --split
+      - heldout
+      resources:
+        requests:
+          cpu: '8'
+          memory: 64Gi
+          nvidia.com/gpu: 1
+        limits:
+          cpu: '8'
+          memory: 64Gi
+          nvidia.com/gpu: 1
+          kubeai.io/gpu-memory-mib: '40960'
+    activeDeadlineSeconds: 3600
+    outputs:
+      parameters:
+      - name: metrics
+        valueFrom:
+          path: /work/metrics.json
+    inputs:
+      parameters:
+      - name: modelPath
+  - name: export-model
+    script:
+      image: python:3.12-slim
+      source: "import json, pathlib, time\ncard = {\n    \"model\": \"{{workflow.parameters.baseModel}}\"\
+        ,\n    \"dataset_revision\": \"{{workflow.parameters.datasetRevision}}\",\n\
+        \    \"workflow\": \"{{workflow.name}}\",\n    \"run_id\": \"{{workflow.uid}}\"\
+        ,\n    \"exported_at\": time.strftime(\"%Y-%m-%dT%H:%M:%SZ\", time.gmtime()),\n\
+        \    \"serving\": {\"backend\": \"vllm\", \"max_batch_size\": 32},\n}\nout\
+        \ = pathlib.Path(\"/work/model-card.json\")\nout.parent.mkdir(parents=True,\
+        \ exist_ok=True)\nout.write_text(json.dumps(card, indent=2))\nprint(json.dumps(card))\n"
+      command:
+      - python
+    activeDeadlineSeconds: 300
+    outputs:
+      parameters:
+      - name: card
+        valueFrom:
+          path: /work/model-card.json
+  arguments:
+    parameters:
+    - name: baseModel
+      value: Qwen/Qwen2.5-7B-Instruct
+    - name: datasetRevision
+      value: 2026-05
+    - name: gpuMemoryMiB
+      value: '40960'
+  ttlStrategy:
+    secondsAfterCompletion: 86400
+  serviceAccountName: kubeai-workflow

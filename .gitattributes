@@ -1,0 +1,15 @@
+# Normalise line endings so the repository is identical on Windows, Linux and macOS.
+# Without this, a Windows checkout rewrites every shell script and Dockerfile to CRLF
+# and the container build breaks on the shebang line.
+* text=auto eol=lf
+
+# Files that should never be line-ending converted.
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary
+*.whl binary
+
+# Generated manifests: keep them diffable as text.
+*.yaml text eol=lf
+*.yml text eol=lf

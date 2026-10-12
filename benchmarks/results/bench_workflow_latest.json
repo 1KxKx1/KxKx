@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-10-12T07:30:38.543604+00:00",
+  "config": {
+    "tasks": 25,
+    "seconds_per_step": 0.25,
+    "shape": "fan-out then merge"
+  },
+  "scenarios": [
+    {
+      "label": "max_parallel=1",
+      "max_parallel": 1,
+      "tasks": 25,
+      "duration_seconds": 6.4037,
+      "sum_of_step_seconds": 6.25,
+      "speedup": 1.0,
+      "status": "Succeeded"
+    },
+    {
+      "label": "max_parallel=4",
+      "max_parallel": 4,
+      "tasks": 25,
+      "duration_seconds": 1.8174,
+      "sum_of_step_seconds": 6.25,
+      "speedup": 3.524,
+      "status": "Succeeded"
+    },
+    {
+      "label": "max_parallel=8",
+      "max_parallel": 8,
+      "tasks": 25,
+      "duration_seconds": 1.0287,
+      "sum_of_step_seconds": 6.25,
+      "speedup": 6.225,
+      "status": "Succeeded"
+    },
+    {
+      "label": "max_parallel=16",
+      "max_parallel": 16,
+      "tasks": 25,
+      "duration_seconds": 0.7619,
+      "sum_of_step_seconds": 6.25,
+      "speedup": 8.405,
+      "status": "Succeeded"
+    }
+  ]
+}

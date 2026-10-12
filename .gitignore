@@ -1,0 +1,45 @@
+# --- Python ---------------------------------------------------------------- #
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.Python
+
+# --- pytest scratch -------------------------------------------------------- #
+# pytest's tmp_path root can land in the working directory on Windows, which
+# pollutes `git status` with generated scripts from the workflow tests.
+pytest-of-*/
+pytest-*/
+tmp*/
+
+# --- tooling caches -------------------------------------------------------- #
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+junit*.xml
+
+# --- runtime artefacts ----------------------------------------------------- #
+# Workflow run directories are per-run scratch space, not source.
+.kubeai/
+out/
+install.log
+
+# --- benchmark output ------------------------------------------------------ #
+# The `*_latest.json` snapshots and the rendered charts are committed so the
+# numbers in the README stay verifiable; timestamped runs are scratch.
+benchmarks/results/*T*Z.json
+benchmarks/results/*.tmp
+
+# --- editors / OS ---------------------------------------------------------- #
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,109 @@
+# --- model registry -------------------------------------------------------- #
+# Model ids are registered at start-up. `footprintMib` is the accelerator memory
+# the registry reserves; the sum across loaded models must stay within
+# `memoryBudgetMib`, and the least-recently-used unpinned model is evicted first.
+
+memoryBudgetMib: 24000
+
+models:
+  - id: kubeai-tiny
+    backend: numpy
+    footprintMib: 64
+    maxBatchSize: 32
+    pinned: true
+  # Point this at a running vLLM server for real weights:
+  # - id: qwen2.5-7b-instruct
+  #   backend: vllm
+  #   footprintMib: 16384
+  #   maxBatchSize: 64
+  #   backendOptions:
+  #     baseUrl: http://vllm.ai-platform.svc.cluster.local:8000/v1
+  #     model: Qwen/Qwen2.5-7B-Instruct
+
+replicaCount: 2
+
+image:
+  repository: kubeai-platform
+  tag: "0.4.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+# --- scheduling ------------------------------------------------------------ #
+# The gateway itself is CPU-only; the models it proxies own the GPUs. Pin the
+# gateway away from GPU nodes so it does not consume a scarce accelerator slot.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# --- autoscaling ----------------------------------------------------------- #
+# Queue depth, not CPU, is the signal that matters for inference: a saturated
+# batch shows up as a growing queue long before the CPU looks busy.
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+keda:
+  enabled: false
+  # Polls kubeai's own /admin/autoscaling-hint, which reports pending requests
+  # and batch saturation.
+  pollingInterval: 15
+  cooldownPeriod: 300
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# --- observability --------------------------------------------------------- #
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  labels: {}
+
+prometheusRule:
+  enabled: false
+
+# --- workflow integration -------------------------------------------------- #
+# Argo runs the training half of the platform; this block wires the RBAC the
+# workflow controller needs to submit training pods.
+argo:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: kubeai-workflow
+
+# --- probes ---------------------------------------------------------------- #
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 20
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  startup:
+    path: /healthz
+    failureThreshold: 30
+    periodSeconds: 5
+
+podAnnotations: {}
+env: []

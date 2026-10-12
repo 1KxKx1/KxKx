@@ -1,0 +1,178 @@
+# A DAG that exercises the whole platform and runs anywhere:
+#
+#   kubeai workflow run examples/selftest-pipeline.yaml --show-output
+#
+# Three independent stages (accelerator inventory, scheduler policy comparison,
+# batched-serving benchmark) fan out in parallel and a final stage merges their
+# results. Every step executes for real — the same code paths the CLI uses — but
+# nothing heavy is downloaded, so it is also what CI runs.
+apiVersion: kubeai.io/v1alpha1
+kind: Workflow
+metadata:
+  name: platform-selftest
+  namespace: ai-platform
+  labels:
+    kubeai.io/example: selftest
+spec:
+  entrypoint: selftest
+  ttlSecondsAfterFinished: 3600
+  arguments:
+    parameters:
+      - name: simulatedGpus
+        value: nvidia-rtx4090:4
+      - name: benchRequests
+        value: "16"
+  templates:
+    # ---------------------------------------------------------------- #
+    - name: selftest
+      dag:
+        tasks:
+          - name: inventory
+            template: gpu-inventory
+            arguments:
+              parameters:
+                - name: gpus
+                  value: "{{workflow.parameters.simulatedGpus}}"
+
+          - name: policy-comparison
+            template: scheduler-policies
+
+          - name: serving-throughput
+            template: serving-bench
+            arguments:
+              parameters:
+                - name: requests
+                  value: "{{workflow.parameters.benchRequests}}"
+
+          - name: report
+            template: merge-report
+            depends: [inventory, policy-comparison, serving-throughput]
+            arguments:
+              parameters:
+                - name: inventory
+                  value: "{{tasks.inventory.outputs.result}}"
+                - name: policies
+                  value: "{{tasks.policy-comparison.outputs.result}}"
+                - name: throughput
+                  value: "{{tasks.serving-throughput.outputs.result}}"
+
+    # ---------------------------------------------------------------- #
+    - name: gpu-inventory
+      inputs:
+        parameters: [gpus]
+      script:
+        image: python:3.12-slim
+        command: [python]
+        source: |
+          import json
+          from kubeai.scheduler.device import discover
+
+          devices, source = discover(allow_simulation=True, simulated_spec="{{inputs.parameters.gpus}}")
+          summary = {
+              "source": source,
+              "count": len(devices),
+              "total_memory_mib": sum(d.memory_total_mib for d in devices),
+              "names": sorted({d.name for d in devices}),
+          }
+          print(json.dumps(summary))
+      outputs:
+        result: "{{stdout}}"
+      timeout: 60s
+
+    # ---------------------------------------------------------------- #
+    - name: scheduler-policies
+      script:
+        image: python:3.12-slim
+        command: [python]
+        source: |
+          import json
+          from kubeai.scheduler.simulate import compare_policies
+
+          reports = compare_policies(max_time=400)
+          print(json.dumps([
+              {
+                  "policy": r.policy,
+                  "avg_utilization": round(r.avg_utilization, 4),
+                  "peak_utilization": round(r.peak_utilization, 4),
+                  "preempted": r.preempted,
+                  "stranded_mib": r.stranded_mib,
+              }
+              for r in reports
+          ]))
+      outputs:
+        result: "{{stdout}}"
+      retryStrategy:
+        limit: 1
+        backoffSeconds: 1
+        backoffFactor: 2
+      timeout: 120s
+
+    # ---------------------------------------------------------------- #
+    - name: serving-bench
+      inputs:
+        parameters: [requests]
+      script:
+        image: python:3.12-slim
+        command: [python]
+        source: |
+          import asyncio, json
+          from kubeai.serving.bench import run_benchmark
+
+          report = asyncio.run(run_benchmark(
+              requests=int("{{inputs.parameters.requests}}"),
+              max_tokens=8,
+              batch_sizes=[1, 8],
+              prompt_tokens=16,
+              output_dir=None,
+          ))
+          print(json.dumps([
+              {
+                  "scenario": s["label"],
+                  "tokens_per_second": s["throughput_tokens_per_second"],
+                  "speedup_vs_serial": s["speedup_vs_serial"],
+                  "mean_ttft_ms": round(s["mean_ttft_seconds"] * 1000, 3),
+              }
+              for s in report["scenarios"]
+          ]))
+      outputs:
+        result: "{{stdout}}"
+      timeout: 300s
+
+    # ---------------------------------------------------------------- #
+    - name: merge-report
+      inputs:
+        parameters: [inventory, policies, throughput]
+      script:
+        image: python:3.12-slim
+        command: [python]
+        # Upstream results arrive through the environment rather than being
+        # interpolated into the source text: a JSON payload quoted inside a script
+        # body works until the day it contains a quote, and then it is a syntax
+        # error nobody expects.
+        env:
+          SELFTEST_INVENTORY: "{{inputs.parameters.inventory}}"
+          SELFTEST_POLICIES: "{{inputs.parameters.policies}}"
+          SELFTEST_THROUGHPUT: "{{inputs.parameters.throughput}}"
+        source: |
+          import json, os
+
+          inventory = json.loads(os.environ["SELFTEST_INVENTORY"])
+          policies = json.loads(os.environ["SELFTEST_POLICIES"])
+          throughput = json.loads(os.environ["SELFTEST_THROUGHPUT"])
+
+          print("kubeai platform selftest")
+          print("=" * 46)
+          print(f"accelerators : {inventory['count']} via {inventory['source']} "
+                f"({inventory['total_memory_mib']} MiB total)")
+          print(f"              {', '.join(inventory['names'])}")
+          print("policy comparison")
+          for row in policies:
+              print(f"  {row['policy']:<16} avg={row['avg_utilization']:.3f} "
+                    f"peak={row['peak_utilization']:.3f} preempted={row['preempted']}")
+          print("serving throughput")
+          for row in throughput:
+              print(f"  {row['scenario']:<32} {row['tokens_per_second']:>9.1f} tok/s "
+                    f"({row['speedup_vs_serial']:.2f}x)")
+          print("=" * 46)
+          print("all stages completed")
+      timeout: 60s

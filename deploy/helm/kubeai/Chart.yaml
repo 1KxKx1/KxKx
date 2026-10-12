@@ -1,0 +1,17 @@
+apiVersion: v2
+name: kubeai
+description: |
+  Cloud-native AI platform: an OpenAI-compatible inference gateway with
+  continuous batching, a memory-budgeted model registry and GPU-aware placement,
+  plus the RBAC that lets Argo Workflows run the training half.
+type: application
+version: 0.4.0
+appVersion: "0.4.0"
+keywords: [ai, inference, llm, gpu, kubernetes, argo-workflows, vllm]
+home: https://github.com/example/kubeai-platform
+sources:
+  - https://github.com/example/kubeai-platform
+maintainers:
+  - name: Zhang Kaixiang
+annotations:
+  category: MachineLearning

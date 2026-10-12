@@ -1,0 +1,35 @@
+# GPU node inventory shared by the scheduler and the gateway.
+#
+# The platform discovers accelerators from nvidia-smi at runtime; this manifest is
+# for clusters where the NVIDIA device plugin already advertises them, and shows
+# the labels the scheduler scores against.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubeai-gpu-inventory
+  namespace: ai-platform
+data:
+  inventory.yaml: |
+    nodes:
+      - name: gpu-node-00
+        labels:
+          kubernetes.io/hostname: gpu-node-00
+          nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+          node.kubernetes.io/instance-type: gpu-a100-4x
+          topology.kubernetes.io/zone: zone-a
+          kubeai.io/interconnect: nvlink
+        accelerators:
+          - { index: 0, type: gpu, memoryMiB: 40960, domain: nvlink-0 }
+          - { index: 1, type: gpu, memoryMiB: 40960, domain: nvlink-0 }
+          - { index: 2, type: gpu, memoryMiB: 40960, domain: nvlink-1 }
+          - { index: 3, type: gpu, memoryMiB: 40960, domain: nvlink-1 }
+      - name: npu-node-00
+        labels:
+          kubernetes.io/hostname: npu-node-00
+          kubeai.io/accelerator: ascend910b
+          topology.kubernetes.io/zone: zone-b
+        accelerators:
+          - { index: 0, type: npu, memoryMiB: 65536, domain: hccs-0 }
+          - { index: 1, type: npu, memoryMiB: 65536, domain: hccs-0 }
+    # Smallest block still worth keeping free; drives the fragmentation penalty.
+    fragmentFloorMiB: 4096

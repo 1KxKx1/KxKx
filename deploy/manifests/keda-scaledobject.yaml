@@ -1,0 +1,47 @@
+# KEDA ScaledObject driven by kubeai's own backpressure signal.
+#
+# Why not CPU: an inference replica that is fully batched can sit near 100% of its
+# *useful* throughput while CPU looks moderate, and a queued request costs a user
+# real latency. Scaling on queue depth reacts to the thing users feel.
+#
+# Requires the Prometheus adapter to scrape the ServiceMonitor, or use the
+# external-scaler variant against /admin/autoscaling-hint.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: kubeai-gateway
+  namespace: ai-platform
+spec:
+  scaleTargetRef:
+    name: kubeai-platform
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  pollingInterval: 15
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus.monitoring.svc.cluster.local:9090
+        metricName: kubeai_queue_depth
+        # One replica of headroom per 8 queued requests; the target is the
+        # per-replica queue depth we are willing to tolerate.
+        query: |
+          sum(kubeai_queue_depth{job="kubeai"})
+        threshold: "16"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus.monitoring.svc.cluster.local:9090
+        metricName: kubeai_ttft_p95
+        query: |
+          histogram_quantile(
+            0.95,
+            sum(rate(kubeai_time_to_first_token_seconds_bucket{job="kubeai"}[5m])) by (le)
+          )
+        # Latency-based scaling catches the case where the queue is short but the
+        # batch is saturated: users wait even though nothing is "queued".
+        threshold: "1.5"

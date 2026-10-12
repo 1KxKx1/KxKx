@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-platform
+  labels:
+    app.kubernetes.io/part-of: kubeai-platform
+    # Label the namespace so a GPU-tainted node pool can be selected per workload.
+    kubeai.io/managed: "true"
+---
+# PriorityClasses encode the preemption policy the scheduler implements in-process:
+# interactive serving outranks batch inference, which outranks training.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: kubeai-serving
+value: 1000000
+globalDefault: false
+description: "Interactive inference; must not be starved by batch work."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: kubeai-batch-inference
+value: 100000
+globalDefault: false
+description: "Offline / batch inference."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: kubeai-training
+value: 10000
+globalDefault: false
+description: "Long-running training; preemptible by serving traffic."
