@@ -7,7 +7,7 @@ required to run or test it.**
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-000000)](https://docs.astral.sh/ruff/)
-[![Tests](https://img.shields.io/badge/tests-93%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-118%20passing-brightgreen)](tests)
 
 [![CI](https://github.com/1KxKx1/KxKx/actions/workflows/ci.yml/badge.svg)](https://github.com/1KxKx1/KxKx/actions/workflows/ci.yml)
 
@@ -386,12 +386,13 @@ make test          # or: pytest -q
 make lint          # ruff check
 ```
 
-93 tests covering scheduling policies and preemption, DAG execution semantics (cycles, retries,
-`when` gates, cross-step parameters), KV-cache correctness against padding, batcher behaviour
-under cancellation and back-pressure, registry eviction, metric exposition, and the full
-end-to-end self-test pipeline. A further 18 tests in `tests/test_gateway.py` exercise the
-OpenAI-compatible HTTP surface; they skip automatically when the optional `[web]` extra is absent,
-because the scheduler, workflow engine and batcher are all usable without FastAPI.
+118 tests, in two groups. 98 run with no HTTP layer at all — scheduling policies and preemption,
+DAG execution semantics (cycles, retries, `when` gates, cross-step parameters), KV-cache
+correctness against padding, batcher behaviour under cancellation and back-pressure, registry
+eviction and scheduler placement, backend option handling, metric exposition, and the end-to-end
+self-test pipeline. The remaining 20 in `tests/test_gateway.py` exercise the OpenAI-compatible
+surface; they skip automatically when the optional `[web]` extra is absent, because the scheduler,
+workflow engine and batcher are all usable without FastAPI.
 
 CI additionally runs the self-test DAG end to end, compiles both example pipelines, boots the
 container and calls `/v1/chat/completions`, renders the Helm chart, checks that every `--json`
