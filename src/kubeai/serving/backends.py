@@ -16,12 +16,15 @@ weights.
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
+import re
 import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -197,7 +200,11 @@ class NumpyTransformerBackend(Backend):
 
     name = "numpy-transformer"
 
-    def __init__(self, config: TransformerConfig | None = None) -> None:
+    def __init__(self, config: TransformerConfig | Mapping[str, Any] | None = None) -> None:
+        # A dict is what arrives over HTTP (``POST /v1/models/load``), so accept it
+        # here rather than forcing every caller to construct the dataclass.
+        if isinstance(config, Mapping):
+            config = TransformerConfig(**config)
         self.config = config or TransformerConfig()
         self.tokenizer = CharTokenizer(self.config.vocab_size)
         cfg = self.config
@@ -513,8 +520,34 @@ BACKENDS: dict[str, type[Backend]] = {
     "vllm": VLLMBackend,
 }
 
+_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _snake_case(key: str) -> str:
+    """``baseUrl`` -> ``base_url``. Backend options arrive as JSON."""
+    return _CAMEL_BOUNDARY.sub("_", key).lower()
+
 
 def build_backend(kind: str, **kwargs: Any) -> Backend:
+    """Instantiate a backend by name.
+
+    Option keys are normalised from camelCase (the spelling a JSON payload uses)
+    to snake_case, and an unrecognised option raises a ``ValueError`` naming the
+    accepted ones — an HTTP caller should get a clear 4xx/5xx, not a bare
+    ``TypeError`` from deep inside the constructor.
+    """
     if kind not in BACKENDS:
         raise ValueError(f"unknown backend {kind!r}; choose from {sorted(BACKENDS)}")
-    return BACKENDS[kind](**kwargs)
+    factory = BACKENDS[kind]
+    normalised = {_snake_case(key): value for key, value in kwargs.items()}
+    try:
+        return factory(**normalised)
+    except TypeError as exc:
+        accepted = sorted(
+            name
+            for name in inspect.signature(factory).parameters
+            if name not in {"self", "args", "kwargs"}
+        )
+        raise ValueError(
+            f"invalid options for backend {kind!r}: {exc}; accepted: {accepted}"
+        ) from exc

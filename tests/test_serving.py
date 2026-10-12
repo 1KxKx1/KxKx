@@ -160,6 +160,30 @@ def test_unknown_backend_is_rejected():
         build_backend("nope")
 
 
+def test_backend_accepts_a_mapping_config():
+    """POST /v1/models/load sends JSON, so a dict must be accepted for `config`."""
+    backend = build_backend(
+        "numpy", config={"vocab_size": 64, "dim": 16, "n_layers": 1, "n_heads": 2}
+    )
+    assert isinstance(backend, NumpyTransformerBackend)
+    assert backend.config.vocab_size == 64
+    assert backend.config.dim == 16
+    # The tokenizer must follow the model's vocabulary, not the default one.
+    assert backend.tokenizer.vocab_size == 64
+
+
+def test_backend_options_accept_camel_case():
+    """The documented HTTP payload uses camelCase; it must not be a TypeError."""
+    backend = build_backend("vllm", baseUrl="http://vllm:8000/v1", model="qwen")
+    assert backend.base_url == "http://vllm:8000/v1"
+    assert backend.model == "qwen"
+
+
+def test_unknown_backend_option_raises_a_clear_error():
+    with pytest.raises(ValueError, match="invalid options for backend 'echo'"):
+        build_backend("echo", nonExistentOption=1)
+
+
 # --------------------------------------------------------------------------- #
 # sampling
 # --------------------------------------------------------------------------- #
