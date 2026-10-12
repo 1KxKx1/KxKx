@@ -22,11 +22,10 @@ from .model import (
     DeviceSlot,
     Node,
     Placement,
-    ResourceRequest,
     TaskRequest,
     Unscheduleable,
 )
-from .policies import Policy, build_policy, device_utilization_after, select_devices
+from .policies import Policy, build_policy, select_devices
 
 log = logging.getLogger(__name__)
 

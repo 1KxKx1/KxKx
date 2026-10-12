@@ -173,6 +173,19 @@ def _softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
     return exp / exp.sum(axis=axis, keepdims=True)
 
 
+def _project(
+    hidden: np.ndarray, matrix: np.ndarray, batch: int, tokens: int, heads: int, head_dim: int
+) -> np.ndarray:
+    """``(B, T, D) @ (D, D)`` -> ``(B, heads, T, head_dim)``.
+
+    A module-level function rather than a closure over the loop body: a closure
+    that reads the loop variable is correct only as long as it is called in the
+    same iteration, which is exactly the kind of assumption that breaks later.
+    """
+    out = hidden @ matrix
+    return out.reshape(batch, tokens, heads, head_dim).transpose(0, 2, 1, 3)
+
+
 class NumpyTransformerBackend(Backend):
     """Decoder-only transformer with per-sequence KV caches, in NumPy.
 
@@ -308,12 +321,10 @@ class NumpyTransformerBackend(Backend):
             residual = x
             h = _layer_norm(x, layer["ln1_g"], layer["ln1_b"])
 
-            def project(matrix: np.ndarray) -> np.ndarray:
-                # (B,T,D) -> (B,heads,T,head_dim)
-                out = h @ matrix
-                return out.reshape(batch, new_tokens, heads, head_dim).transpose(0, 2, 1, 3)
+            q = _project(h, layer["wq"], batch, new_tokens, heads, head_dim)
+            k_new = _project(h, layer["wk"], batch, new_tokens, heads, head_dim)
+            v_new = _project(h, layer["wv"], batch, new_tokens, heads, head_dim)
 
-            q, k_new, v_new = project(layer["wq"]), project(layer["wk"]), project(layer["wv"])
             k_all = np.concatenate([k_past[layer_index], k_new], axis=2)
             v_all = np.concatenate([v_past[layer_index], v_new], axis=2)
 

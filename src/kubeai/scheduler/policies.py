@@ -16,8 +16,9 @@ Two things make this more than a toy:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from .model import DeviceSlot, Node, PolicyName, ResourceRequest, TaskRequest, TopologyPreference
 

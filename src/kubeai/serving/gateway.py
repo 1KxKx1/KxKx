@@ -15,19 +15,19 @@ import hashlib
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..scheduler.device import DeviceType, discover
-from ..scheduler.model import ResourceRequest, TaskRequest
-from ..scheduler.scheduler import Scheduler
 from ..scheduler.model import Node
-from .batcher import ContinuousBatcher, GenerationRequest, QueueFull
+from ..scheduler.scheduler import Scheduler
+from .batcher import GenerationRequest, QueueFull
 from .metrics import ServingMetrics
 from .registry import ModelNotFound, ModelRegistry, ModelSpec
 
@@ -160,7 +160,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        from .backends import NumpyTransformerBackend, TransformerConfig
+        from .backends import TransformerConfig
 
         registry.register(
             ModelSpec(

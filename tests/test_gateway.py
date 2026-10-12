@@ -14,7 +14,6 @@ fastapi = pytest.importorskip("fastapi", reason="the [web] extra is not installe
 from fastapi.testclient import TestClient  # noqa: E402
 
 from kubeai.serving.gateway import GatewayConfig, create_app, render_chat  # noqa: E402
-from kubeai.serving.backends import TransformerConfig  # noqa: E402
 
 TINY_GATEWAY = GatewayConfig(
     default_model="tiny-test",

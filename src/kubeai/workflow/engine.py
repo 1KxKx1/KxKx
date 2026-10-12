@@ -233,7 +233,7 @@ class WorkflowEngine:
             if not running:
                 if pending:
                     # Nothing runnable and nothing running => unsatisfiable graph.
-                    for name, task in pending.items():
+                    for name in pending:
                         self._results[name] = StepResult(
                             task=name,
                             status=StepStatus.ERRORED,

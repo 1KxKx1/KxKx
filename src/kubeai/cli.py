@@ -128,7 +128,7 @@ def cmd_schedule(args: argparse.Namespace) -> int:
 # workflow
 # --------------------------------------------------------------------------- #
 def cmd_workflow_run(args: argparse.Namespace) -> int:
-    from .workflow.engine import WorkflowEngine, WorkflowFailed
+    from .workflow.engine import WorkflowEngine
     from .workflow.spec import Workflow
 
     workflow = Workflow.load(args.file)

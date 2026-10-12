@@ -23,13 +23,14 @@ import logging
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
-from .backends import Backend, CharTokenizer, EOS, Sequence
+from .backends import EOS, Backend, CharTokenizer, Sequence
 from .metrics import ServingMetrics
 
 log = logging.getLogger(__name__)

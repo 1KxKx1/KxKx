@@ -20,14 +20,15 @@ import json
 import platform
 import statistics
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
-from .backends import Backend, CharTokenizer, EOS, Sequence, build_backend
+from .backends import EOS, Backend, CharTokenizer, Sequence, build_backend
 from .batcher import ContinuousBatcher, FinishReason, GenerationRequest, sample_token
 from .metrics import ServingMetrics
 

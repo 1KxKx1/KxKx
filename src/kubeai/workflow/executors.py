@@ -18,7 +18,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
-from .spec import ContainerSpec, ResourceSpec, Template, substitute
+from .spec import ContainerSpec, Template, substitute
 
 
 class StepStatus(str, Enum):

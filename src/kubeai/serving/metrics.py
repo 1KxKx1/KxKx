@@ -8,7 +8,6 @@ and text exposition.
 
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import dataclass, field
 

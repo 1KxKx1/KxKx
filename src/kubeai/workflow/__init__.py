@@ -9,8 +9,8 @@ from .compile import (
 )
 from .engine import WorkflowEngine, WorkflowFailed, WorkflowRun, run_workflow
 from .executors import (
-    DryRunExecutor,
     DockerExecutor,
+    DryRunExecutor,
     Executor,
     LocalExecutor,
     StepResult,
